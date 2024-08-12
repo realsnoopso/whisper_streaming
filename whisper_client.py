@@ -1,3 +1,4 @@
+import wave
 import pyaudio
 import threading
 import socket
