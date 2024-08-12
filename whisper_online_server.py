@@ -6,8 +6,32 @@ import argparse
 import os
 import logging
 import numpy as np
+import time
 
+# 모든 로거의 레벨을 WARNING으로 설정
+logging.basicConfig(level=logging.WARNING)
+
+# 특정 로거들의 레벨을 ERROR로 설정 (WARNING보다 더 높은 레벨)
+logging.getLogger('whisper_online').setLevel(logging.ERROR)
+logging.getLogger('faster_whisper').setLevel(logging.ERROR)
+
+# 메인 로거 설정
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 콘솔 핸들러 추가
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(message)s')  # 메시지만 출력하도록 포맷 변경
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+# 기존의 핸들러 제거 (중복 출력 방지)
+logger.propagate = False
+
+# whisper_online 모듈의 로깅을 완전히 비활성화
+logging.getLogger('whisper_online').disabled = True
+
 parser = argparse.ArgumentParser()
 
 # server options
@@ -89,8 +113,24 @@ class ServerProcessor:
         self.connection = c
         self.online_asr_proc = online_asr_proc
         self.min_chunk = min_chunk
+        self.last_output = ""
+        self.start_time = time.time()
 
-        self.last_end = None
+    def format_output_transcript(self, o):
+        if o[2] is not None and o[2].strip() != "":
+            elapsed_time = int(time.time() - self.start_time)
+            minutes = elapsed_time // 60
+            seconds = elapsed_time % 60
+            timestamp = f"{minutes}:{seconds:02d}"
+            return f"{timestamp}: {o[2].strip()}"
+        return None
+
+    def send_result(self, o):
+        msg = self.format_output_transcript(o)
+        if msg is not None and msg != self.last_output:
+            logger.info(msg)  # print 대신 logger.info 사용
+            self.connection.send(msg)
+            self.last_output = msg
 
     def receive_audio_chunk(self):
         # receive all audio that is available by this time
@@ -107,35 +147,6 @@ class ServerProcessor:
         if not out:
             return None
         return np.concatenate(out)
-
-    def format_output_transcript(self,o):
-        # output format in stdout is like:
-        # 0 1720 Takhle to je
-        # - the first two words are:
-        #    - beg and end timestamp of the text segment, as estimated by Whisper model. The timestamps are not accurate, but they're useful anyway
-        # - the next words: segment transcript
-
-        # This function differs from whisper_online.output_transcript in the following:
-        # succeeding [beg,end] intervals are not overlapping because ELITR protocol (implemented in online-text-flow events) requires it.
-        # Therefore, beg, is max of previous end and current beg outputed by Whisper.
-        # Usually it differs negligibly, by appx 20 ms.
-
-        if o[0] is not None:
-            beg, end = o[0]*1000,o[1]*1000
-            if self.last_end is not None:
-                beg = max(beg, self.last_end)
-
-            self.last_end = end
-            print("%1.0f %1.0f %s" % (beg,end,o[2]),flush=True,file=sys.stderr)
-            return "%1.0f %1.0f %s" % (beg,end,o[2])
-        else:
-            logger.debug("No text in this segment")
-            return None
-
-    def send_result(self, o):
-        msg = self.format_output_transcript(o)
-        if msg is not None:
-            self.connection.send(msg)
 
     def process(self):
         # handle one client connection
@@ -162,10 +173,10 @@ class ServerProcessor:
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.bind((args.host, args.port))
     s.listen(1)
-    logger.info('Listening on'+str((args.host, args.port)))
+    logger.info('Listening on %s', str((args.host, args.port)))
     while True:
         conn, addr = s.accept()
-        logger.info('Connected to client on {}'.format(addr))
+        logger.info('Connected to client on %s', str(addr))
         connection = Connection(conn)
         proc = ServerProcessor(connection, online, min_chunk)
         proc.process()
