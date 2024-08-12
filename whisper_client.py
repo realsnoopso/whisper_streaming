@@ -11,7 +11,7 @@ CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
-SERVER_ADDRESS = ('localhost', 43001)  # 서버 주소와 포트
+SERVER_ADDRESS = ('localhost', 43007)  # 서버 주소와 포트
 
 p = pyaudio.PyAudio()
 frames = []
