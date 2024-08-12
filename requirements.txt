@@ -1,0 +1,10 @@
+numpy==1.21.0
+librosa==0.8.1
+soundfile==0.10.3.post1
+torch==1.9.0
+torchaudio==0.9.0
+faster-whisper==0.5.1
+pyaudio==0.2.11
+websockets==10.1
+aioconsole==0.3.3
+tqdm==4.62.3
